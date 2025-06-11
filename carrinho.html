@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Carrinho - Loja Kapibara</title>
+  <link rel="stylesheet" href="CSS/styles.css">
+</head>
+<body>
+  <div class="cliente-container">
+    <img src="assets/logo.png" alt="Logo Kapibara" class="logo">
+    <h2>Meu Carrinho</h2>
+    <div id="carrinho-itens"></div>
+    <form id="form-finalizar" onsubmit="return finalizarPedido()" style="margin-top:24px;">
+      <label>Forma de Pagamento:
+        <select id="forma_pagamento">
+          <option value="Cartão de Crédito">Cartão de Crédito</option>
+          <option value="Pix">Pix</option>
+          <option value="Boleto">Boleto</option>
+        </select>
+      </label>
+      <button type="submit">Finalizar Pedido</button>
+      <div id="erro-finalizar" class="erro"></div>
+    </form>
+    <div style="margin-top:30px;">
+      <button onclick="window.location.href='produtos.html'">Continuar Comprando</button>
+      <button class="secundario" onclick="logout()">Sair</button>
+    </div>
+  </div>
+  <script>
+  // Protege acesso
+  if (localStorage.getItem("tipo") !== "cliente") {
+    window.location.href = "index.html";
+  }
+  let produtosCache = {};
+  function renderCarrinho() {
+    let carrinho = JSON.parse(localStorage.getItem('carrinho') || '{}');
+    let html = '';
+    let total = 0;
+    let temItem = false;
+    for (const id in carrinho) {
+      const p = produtosCache[id];
+      if (!p) continue;
+      temItem = true;
+      const qt = carrinho[id];
+      const subtotal = p.valor * qt;
+      total += subtotal;
+      html += `
+      <div class="produto-card">
+        <img src="${p.imagem || 'assets/produtos/produto1.jpg'}" alt="${p.nome}">
+        <h4>${p.nome}</h4>
+        <p>Preço: R$ ${parseFloat(p.valor).toFixed(2).replace('.', ',')}</p>
+        <p>Quantidade: 
+          <button type="button" onclick="alteraQt(${id},-1)">-</button>
+          ${qt}
+          <button type="button" onclick="alteraQt(${id},1)">+</button>
+          <button type="button" onclick="removeItem(${id})">Remover</button>
+        </p>
+        <p>Subtotal: R$ ${subtotal.toFixed(2).replace('.', ',')}</p>
+      </div>
+      `;
+    }
+    if (!temItem) {
+      html = '<p>Carrinho vazio.</p>';
+      document.getElementById('form-finalizar').style.display = 'none';
+    } else {
+      html += `<div class="preco" style="font-size:1.2em;text-align:right;">Total: R$ ${total.toFixed(2).replace('.', ',')}</div>`;
+      document.getElementById('form-finalizar').style.display = '';
+    }
+    document.getElementById('carrinho-itens').innerHTML = html;
+  }
+  function alteraQt(id, delta) {
+    let carrinho = JSON.parse(localStorage.getItem('carrinho') || '{}');
+    carrinho[id] = (carrinho[id] || 0) + delta;
+    if (carrinho[id] > 2) carrinho[id] = 2;
+    if (carrinho[id] <= 0) delete carrinho[id];
+    localStorage.setItem('carrinho', JSON.stringify(carrinho));
+    renderCarrinho();
+  }
+  function removeItem(id) {
+    let carrinho = JSON.parse(localStorage.getItem('carrinho') || '{}');
+    delete carrinho[id];
+    localStorage.setItem('carrinho', JSON.stringify(carrinho));
+    renderCarrinho();
+  }
+  async function finalizarPedido() {
+    const cliente_id = localStorage.getItem('logado');
+    const forma_pagamento = document.getElementById('forma_pagamento').value;
+    let carrinho = JSON.parse(localStorage.getItem('carrinho') || '{}');
+    if (!cliente_id || Object.keys(carrinho).length === 0) {
+      document.getElementById('erro-finalizar').textContent = "Carrinho vazio ou não autenticado.";
+      return false;
+    }
+    let itens = [];
+    let valor_total = 0;
+    for (const id in carrinho) {
+      const p = produtosCache[id];
+      const qt = carrinho[id];
+      itens.push({ produto_id: id, quantidade: qt, valor_unitario: p.valor });
+      valor_total += p.valor * qt;
+    }
+    const resp = await fetch('api/pedidos.php', {
+      method: 'POST',
+      body: JSON.stringify({ cliente_id, forma_pagamento, valor_total, itens })
+    });
+    if (resp.ok) {
+      alert("Pedido finalizado com sucesso!");
+      localStorage.removeItem('carrinho');
+      window.location.href = "cliente.html";
+    } else {
+      document.getElementById('erro-finalizar').textContent = "Erro ao finalizar pedido. Tente novamente.";
+    }
+    return false;
+  }
+  function logout() {
+    localStorage.removeItem("logado");
+    localStorage.removeItem("tipo");
+    window.location.href = "index.html";
+  }
+  // Carrega produtos e renderiza carrinho
+  async function carregaProdutosECarrinho() {
+    const resp = await fetch('api/produtos.php');
+    const produtos = await resp.json();
+    produtos.forEach(p => produtosCache[p.id] = p);
+    renderCarrinho();
+  }
+  carregaProdutosECarrinho();
+  </script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Administração - Loja Kapibara</title>
+  <link rel="stylesheet" href="CSS/styles.css">
+</head>
+<body>
+  <div class="admin-container">
+    <img src="assets/logo.png" alt="Logo Kapibara" class="logo">
+    <h2>Painel Administrativo</h2>
+    <h3>Produtos</h3>
+    <div id="produtos-admin"></div>
+    <button onclick="showCadastroProduto()">Cadastrar Novo Produto</button>
+    <div id="cadastro-produto" style="display:none;"></div>
+    <hr>
+    <h3>Pedidos</h3>
+    <div id="pedidos-admin"></div>
+    <button onclick="logout()" class="secundario">Sair</button>
+  </div>
+  <script>
+  if (localStorage.getItem("tipo") !== "admin") {
+    window.location.href = "index.html";
+  }
+  // ========== PRODUTOS ==========
+  async function carregaProdutosAdmin() {
+    const resp = await fetch('api/produtos.php');
+    const produtos = await resp.json();
+    let html = '<table style="width:100%;margin-bottom:22px;text-align:center"><tr><th>Imagem</th><th>Nome</th><th>Valor</th><th>Estoque</th><th>Ações</th></tr>';
+    produtos.forEach(p => {
+      html += `<tr>
+        <td><img src="${p.imagem || 'assets/produtos/produto1.jpg'}" alt="${p.nome}" style="width:100px;border-radius:10px;"></td>
+        <td>${p.nome}</td>
+        <td>R$ ${parseFloat(p.valor).toFixed(2).replace('.', ',')}</td>
+        <td>${p.estoque}</td>
+        <td>
+          <button onclick="editaProduto(${p.id})">Editar</button>
+          <button onclick="deletaProduto(${p.id})">Excluir</button>
+        </td>
+      </tr>`;
+    });
+    html += '</table>';
+    document.getElementById('produtos-admin').innerHTML = html;
+  }
+  function showCadastroProduto(produto) {
+    let editar = produto !== undefined;
+    document.getElementById('cadastro-produto').style.display = '';
+    document.getElementById('cadastro-produto').innerHTML = `
+      <form onsubmit="return salvaProduto(event,${editar ? produto.id : 'null'})">
+        <label>Nome: <input id="p_nome" value="${produto?.nome || ''}" required></label>
+        <label>Descrição: <input id="p_desc" value="${produto?.descricao || ''}"></label>
+        <label>Valor (R$): <input id="p_valor" type="number" step="0.01" value="${produto?.valor || ''}" required></label>
+        <label>Estoque: <input id="p_estoque" type="number" value="${produto?.estoque || '10'}" required></label>
+        <label>Imagem (caminho): <input id="p_img" value="${produto?.imagem || ''}" placeholder="assets/produtos/produto1.jpg"></label>
+        <button type="submit">${editar ? "Salvar" : "Cadastrar"}</button>
+        <button type="button" onclick="hideCadastroProduto()" class="secundario">Cancelar</button>
+      </form>
+    `;
+  }
+  function hideCadastroProduto() {
+    document.getElementById('cadastro-produto').style.display = 'none';
+  }
+  async function salvaProduto(event, id) {
+    event.preventDefault();
+    const nome = document.getElementById('p_nome').value;
+    const descricao = document.getElementById('p_desc').value;
+    const valor = document.getElementById('p_valor').value;
+    const estoque = document.getElementById('p_estoque').value;
+    const imagem = document.getElementById('p_img').value;
+    let url = 'api/produtos.php';
+    let method = id ? 'PUT' : 'POST';
+    let body = { nome, descricao, valor, estoque, imagem };
+    if (id) body.id = id;
+    const resp = await fetch(url, {
+      method,
+      body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+      alert(id ? "Produto atualizado!" : "Produto cadastrado!");
+      hideCadastroProduto();
+      carregaProdutosAdmin();
+    }
+    return false;
+  }
+  async function editaProduto(id) {
+    const resp = await fetch('api/produtos.php');
+    const produtos = await resp.json();
+    const p = produtos.find(x => x.id == id);
+    showCadastroProduto(p);
+  }
+  async function deletaProduto(id) {
+    if (!confirm("Excluir este produto?")) return;
+    await fetch('api/produtos.php?id=' + id, { method: 'DELETE' });
+    carregaProdutosAdmin();
+  }
+
+  // ========== PEDIDOS ==========
+  async function carregaPedidosAdmin() {
+    const resp = await fetch('api/pedidos.php');
+    const pedidos = await resp.json();
+    let html = '';
+    pedidos.forEach(p => {
+      html += `
+        <div class="pedido-card">
+          <b>Pedido #${p.id}</b> - Cliente: ${p.cliente_id}<br>
+          <b>Status:</b>
+          <select onchange="atualizaStatus(${p.id}, this.value)">
+            <option value="pendente" ${p.status_pagamento=='pendente'?'selected':''}>Pendente</option>
+            <option value="aprovado" ${p.status_pagamento=='aprovado'?'selected':''}>Aprovado</option>
+            <option value="enviado" ${p.status_pagamento=='enviado'?'selected':''}>Enviado</option>
+            <option value="entregue" ${p.status_pagamento=='entregue'?'selected':''}>Entregue</option>
+            <option value="cancelado" ${p.status_pagamento=='cancelado'?'selected':''}>Cancelado</option>
+          </select><br>
+          <b>Forma de pagamento:</b> ${p.forma_pagamento || '-'}<br>
+          <b>Data do pedido:</b> ${p.data ? p.data : '-'}<br>
+          <b>Aprovado em:</b> ${p.data_aprovacao ? p.data_aprovacao : '-'}<br>
+          <b>Enviado em:</b> ${p.data_envio ? p.data_envio : '-'}<br>
+          <b>Entregue em:</b> ${p.data_entrega ? p.data_entrega : '-'}<br>
+          <b>Valor total:</b> R$ ${parseFloat(p.valor_total).toFixed(2).replace('.', ',')}<br>
+          <b>Itens:</b>
+          <ul id="itens-pedido-${p.id}"><li>Carregando...</li></ul>
+        </div>
+      `;
+    });
+    document.getElementById('pedidos-admin').innerHTML = html;
+    pedidos.forEach(p => carregaItensPedido(p.id));
+  }
+  async function carregaItensPedido(pedido_id) {
+    const resp = await fetch('api/itens_pedido.php?pedido_id=' + pedido_id);
+    if (resp.ok) {
+      const itens = await resp.json();
+      let html = '';
+      itens.forEach(i => {
+        html += `<li>
+          <img src="${i.imagem || 'assets/produtos/produto1.jpg'}" alt="${i.nome}" style="width:100px;vertical-align:middle;border-radius:5px;">
+          ${i.nome} - Qt: ${i.quantidade} - R$ ${parseFloat(i.valor_unitario).toFixed(2).replace('.', ',')}
+        </li>`;
+      });
+      document.getElementById('itens-pedido-' + pedido_id).innerHTML = html;
+    }
+  }
+  async function atualizaStatus(id, status) {
+    const now = new Date().toISOString().slice(0,19).replace('T',' ');
+    let body = { id, status_pagamento: status };
+    if (status === 'aprovado') body.data_aprovacao = now;
+    if (status === 'enviado') body.data_envio = now;
+    if (status === 'entregue') body.data_entrega = now;
+    if (status === 'cancelado') body.data_cancelado = now;
+    await fetch('api/pedidos.php', {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+    carregaPedidosAdmin();
+  }
+  function logout() {
+    localStorage.removeItem("logado");
+    localStorage.removeItem("tipo");
+    window.location.href = "index.html";
+  }
+  carregaProdutosAdmin();
+  carregaPedidosAdmin();
+  </script>
+</body>
+</html>
